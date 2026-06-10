@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ATEM Tally 配對</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #111827;
+      --panel: #1f2937;
+      --border: #374151;
+      --text: #f9fafb;
+      --muted: #9ca3af;
+      --accent: #3b82f6;
+      --ok: #22c55e;
+      --warn: #eab308;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    header {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    h1 { margin: 0; font-size: 1.4rem; }
+    .status {
+      display: flex;
+      gap: 1rem;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+    .dot {
+      width: 0.65rem;
+      height: 0.65rem;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 0.35rem;
+    }
+    .dot.ok { background: var(--ok); }
+    .dot.bad { background: #ef4444; }
+    main {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      padding: 1rem 1.5rem 1.5rem;
+    }
+    @media (max-width: 900px) {
+      main { grid-template-columns: 1fr; }
+    }
+    section, .full-width {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      padding: 1rem;
+    }
+    .full-width {
+      grid-column: 1 / -1;
+    }
+    h2 {
+      margin: 0 0 0.75rem;
+      font-size: 1rem;
+    }
+    .device-row, .paired-row {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 0.5rem;
+      align-items: center;
+      padding: 0.75rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .device-row:last-child, .paired-row:last-child { border-bottom: none; }
+    .mac { font-family: Consolas, monospace; }
+    button, input, select {
+      background: #111827;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      padding: 0.45rem 0.75rem;
+      font-size: 0.9rem;
+    }
+    button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      cursor: pointer;
+    }
+    button.secondary { cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .settings-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 0.5rem;
+      align-items: center;
+    }
+    .pair-controls {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+    }
+    .empty {
+      color: var(--muted);
+      padding: 1rem 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+    th, td {
+      text-align: left;
+      padding: 0.6rem 0.4rem;
+      border-bottom: 1px solid var(--border);
+    }
+    th { color: var(--muted); font-weight: 600; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>ATEM LoRa Tally 配對</h1>
+    <div class="status">
+      <span id="atem-status"><span class="dot bad"></span>ATEM 未連線</span>
+      <span id="counts">已配對 0 / 未配對 0</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="full-width">
+      <h2>Gateway 設定</h2>
+      <div class="settings-row">
+        <input id="atem-ip" type="text" placeholder="ATEM IP，例如 192.168.1.240">
+        <button class="primary" onclick="saveSettings()">儲存 ATEM IP</button>
+      </div>
+      <p class="empty" id="settings-hint">ATEM IP 由此頁設定，儲存後 Gateway 會自動重新連線。</p>
+    </section>
+
+    <section>
+      <h2>未配對裝置</h2>
+      <div id="unpaired-list" class="empty">尚無未配對裝置</div>
+    </section>
+
+    <section>
+      <h2>攝影機頻道</h2>
+      <p class="empty" id="camera-hint">從 ATEM 讀取攝影機 Label...</p>
+      <select id="camera-select" style="width:100%; display:none;"></select>
+    </section>
+
+    <section class="full-width">
+      <h2>已配對裝置</h2>
+      <div id="paired-table-wrap" class="empty">尚無已配對裝置</div>
+    </section>
+  </main>
+
+  <script>
+    const unpairedList = document.getElementById("unpaired-list");
+    const pairedWrap = document.getElementById("paired-table-wrap");
+    const cameraSelect = document.getElementById("camera-select");
+    const cameraHint = document.getElementById("camera-hint");
+    const atemStatus = document.getElementById("atem-status");
+    const counts = document.getElementById("counts");
+    const atemIpInput = document.getElementById("atem-ip");
+    const settingsHint = document.getElementById("settings-hint");
+
+    let cameras = [];
+
+    async function fetchJson(url, options) {
+      const response = await fetch(url, options);
+      if (!response.ok) throw new Error(await response.text());
+      return response.json();
+    }
+
+    async function loadCameras() {
+      cameras = await fetchJson("/api/cameras");
+      cameraSelect.innerHTML = "";
+      if (!cameras.length) {
+        cameraHint.textContent = "無法讀取 ATEM 攝影機（請確認 Gateway 已連線 ATEM）";
+        cameraSelect.style.display = "none";
+        return;
+      }
+      cameraHint.style.display = "none";
+      cameraSelect.style.display = "block";
+      cameras.forEach((cam) => {
+        const option = document.createElement("option");
+        option.value = cam.id;
+        option.textContent = `CAM${cam.id} - ${cam.label}`;
+        cameraSelect.appendChild(option);
+      });
+    }
+
+    async function loadSettings() {
+      const settings = await fetchJson("/api/settings");
+      atemIpInput.value = settings.atem_ip || "";
+    }
+
+    async function saveSettings() {
+      const atemIp = atemIpInput.value.trim();
+      await fetchJson("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ atem_ip: atemIp }),
+      });
+      settingsHint.textContent = "已儲存 ATEM IP，Gateway 正在重新連線...";
+      await loadCameras();
+      await refresh();
+    }
+
+    function renderUnpaired(devices) {
+      if (!devices.length) {
+        unpairedList.className = "empty";
+        unpairedList.textContent = "尚無未配對裝置";
+        return;
+      }
+      unpairedList.className = "";
+      unpairedList.innerHTML = devices.map((mac) => `
+        <div class="device-row">
+          <div>
+            <div class="mac">${mac}</div>
+            <div class="pair-controls">
+              <select id="cam-${mac.replace(/:/g, "")}">
+                ${cameras.map((cam) =>
+                  `<option value="${cam.id}">CAM${cam.id} - ${cam.label}</option>`
+                ).join("")}
+              </select>
+              <button class="primary" onclick="pairDevice('${mac}')">確認配對</button>
+            </div>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function renderPaired(devices) {
+      const entries = Object.entries(devices);
+      if (!entries.length) {
+        pairedWrap.className = "empty";
+        pairedWrap.textContent = "尚無已配對裝置";
+        return;
+      }
+      pairedWrap.className = "";
+      pairedWrap.innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>MAC</th>
+              <th>頻道</th>
+              <th>Label</th>
+              <th>配對時間</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${entries.map(([mac, info]) => `
+              <tr>
+                <td class="mac">${mac}</td>
+                <td>CAM${info.tally_id}</td>
+                <td>${info.label || ""}</td>
+                <td>${info.paired_at || ""}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      `;
+    }
+
+    async function pairDevice(mac) {
+      const select = document.getElementById(`cam-${mac.replace(/:/g, "")}`);
+      const camId = Number(select.value);
+      const cam = cameras.find((item) => item.id === camId);
+      await fetchJson("/api/pair_device", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mac,
+          cam_id: camId,
+          cam_label: cam ? cam.label : `CAM${camId}`,
+        }),
+      });
+      await refresh();
+    }
+
+    async function refresh() {
+      const [unpaired, paired, status] = await Promise.all([
+        fetchJson("/api/unpaired_devices"),
+        fetchJson("/api/paired_devices"),
+        fetchJson("/api/status"),
+      ]);
+      renderUnpaired(unpaired);
+      renderPaired(paired);
+      counts.textContent = `已配對 ${status.paired_count} / 未配對 ${status.unpaired_count}`;
+      if (status.atem_ip && atemIpInput.value !== status.atem_ip) {
+        atemIpInput.value = status.atem_ip;
+      }
+      atemStatus.innerHTML = status.atem_connected
+        ? '<span class="dot ok"></span>ATEM 已連線'
+        : '<span class="dot bad"></span>ATEM 未連線';
+    }
+
+    async function init() {
+      await loadSettings();
+      await loadCameras();
+      await refresh();
+      setInterval(refresh, 3000);
+    }
+
+    init().catch((err) => {
+      console.error(err);
+      cameraHint.textContent = "無法連線 Gateway API";
+    });
+  </script>
+</body>
+</html>

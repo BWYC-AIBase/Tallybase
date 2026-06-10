@@ -1,0 +1,15 @@
+[Unit]
+Description=ATEM Tally LoRa Gateway
+After=network.target
+
+[Service]
+Type=simple
+User=__TALLY_USER__
+WorkingDirectory=__TALLY_HOME__/gateway
+Environment=PYTHONUNBUFFERED=1
+ExecStart=__TALLY_HOME__/.venv/bin/python __TALLY_HOME__/gateway/tally_gateway.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
