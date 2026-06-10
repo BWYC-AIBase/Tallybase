@@ -29,17 +29,27 @@ python3 -m venv "${VENV_DIR}"
 echo "Copy tallybase/ contents to ${INSTALL_DIR} manually or via git pull."
 echo "Set ATEM IP from the Web UI after the service starts."
 
-SERVICE_FILE="$(dirname "$0")/../../deploy/tally-gateway.service"
-if [ -f "${SERVICE_FILE}" ]; then
-  sudo sed \
-    -e "s|__TALLY_HOME__|${INSTALL_DIR}|g" \
-    -e "s|__TALLY_USER__|${TALLY_USER}|g" \
-    "${SERVICE_FILE}" | \
-    sudo tee /etc/systemd/system/tally-gateway.service >/dev/null
-  sudo systemctl daemon-reload
-  echo "Installed systemd service. Enable with:"
-  echo "  sudo systemctl enable tally-gateway"
-  echo "  sudo systemctl start tally-gateway"
-fi
+sudo tee /etc/systemd/system/tally-gateway.service >/dev/null <<EOF
+[Unit]
+Description=ATEM Tally LoRa Gateway
+After=network.target
+
+[Service]
+Type=simple
+User=${TALLY_USER}
+WorkingDirectory=${INSTALL_DIR}/gateway
+Environment=PYTHONUNBUFFERED=1
+ExecStart=${VENV_DIR}/bin/python ${INSTALL_DIR}/gateway/tally_gateway.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+echo "Installed systemd service. Enable with:"
+echo "  sudo systemctl enable tally-gateway"
+echo "  sudo systemctl start tally-gateway"
 
 echo "Setup complete."
