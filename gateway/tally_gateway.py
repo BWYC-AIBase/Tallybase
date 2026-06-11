@@ -50,6 +50,8 @@ class TallyGateway:
             logger.warning("Removed %d invalid paired device records", len(paired) - len(valid_paired))
             save_paired_devices(valid_paired)
         logger.info("Loaded %d paired devices", len(valid_paired))
+        if valid_paired:
+            self._push_pair_announcements()
 
         self.atem.on_tally_change = self._request_broadcast
         self.atem.on_label_change = self._on_label_change
@@ -87,23 +89,33 @@ class TallyGateway:
             info["label"] = new_label
             self.state.pair_device(mac, info)
             save_paired_devices(self.state.get_paired())
-        packet = encode_pair_name(mac, channel, new_label)
-        self.lora.transmit(packet)
+        self._transmit_pair_name(mac, channel, new_label)
         logger.info("Pushed label update CAM%d -> %s", channel, new_label)
 
-    def _push_all_labels(self) -> None:
-        if not self.atem.connected:
-            return
+    def _transmit_pair_name(self, mac: str, tally_id: int, label: str, *, bursts: int | None = None) -> None:
+        packet = encode_pair_name(mac, tally_id, label)
+        count = config.PAIR_ANNOUNCE_BURST if bursts is None else bursts
+        for _ in range(count):
+            self.lora.transmit(packet)
+            time.sleep(0.15)
+
+    def _push_pair_announcements(self, *, bursts: int | None = None) -> None:
         for mac, info in self.state.get_paired().items():
             tally_id = info["tally_id"]
             if not isinstance(tally_id, int) or tally_id < 1 or tally_id > MAX_CHANNELS:
                 logger.warning("Skipping invalid paired device %s with tally_id=%r", mac, tally_id)
                 continue
-            label = self.atem.get_label(tally_id)
-            info["label"] = label
-            self.state.pair_device(mac, info)
-            self.lora.transmit(encode_pair_name(mac, tally_id, label))
+            label = info.get("label") or f"CAM{tally_id}"
+            if self.atem.connected:
+                label = self.atem.get_label(tally_id)
+                info["label"] = label
+                self.state.pair_device(mac, info)
+            logger.info("Announcing pair -> %s CAM%d (%s)", mac, tally_id, label)
+            self._transmit_pair_name(mac, tally_id, label, bursts=bursts)
         save_paired_devices(self.state.get_paired())
+
+    def _push_all_labels(self) -> None:
+        self._push_pair_announcements()
 
     def _on_lora_receive(self, data: bytes) -> None:
         try:
@@ -131,6 +143,7 @@ class TallyGateway:
     def _main_loop(self) -> None:
         next_broadcast = time.monotonic()
         next_prune = time.monotonic()
+        next_pair_announce = time.monotonic()
         while not self._stop.is_set():
             if self.atem.connected and not self._atem_was_connected:
                 self._atem_was_connected = True
@@ -146,6 +159,10 @@ class TallyGateway:
             if now >= next_prune:
                 self._prune_offline_devices()
                 next_prune = now + 1.0
+            if now >= next_pair_announce:
+                if self.state.get_paired():
+                    self._push_pair_announcements(bursts=1)
+                next_pair_announce = now + config.PAIR_ANNOUNCE_INTERVAL_S
             time.sleep(0.01)
 
 

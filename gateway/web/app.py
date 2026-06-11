@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from datetime import datetime
 
 from flask import Flask, jsonify, render_template, request
@@ -89,7 +90,9 @@ def create_app(
         state.pair_device(mac, info)
         save_paired_devices(state.get_paired())
         packet = encode_pair_name(mac, cam_id, cam_label)
-        lora_radio.transmit(packet)
+        for _ in range(config.PAIR_ANNOUNCE_BURST):
+            lora_radio.transmit(packet)
+            time.sleep(0.15)
         return jsonify({"status": "ok"})
 
     @app.route("/api/status")
