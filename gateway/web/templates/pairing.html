@@ -98,9 +98,12 @@
     button:disabled { opacity: 0.5; cursor: not-allowed; }
     .settings-row {
       display: grid;
-      grid-template-columns: 1fr auto;
+      grid-template-columns: 1fr auto auto;
       gap: 0.5rem;
       align-items: center;
+    }
+    @media (max-width: 700px) {
+      .settings-row { grid-template-columns: 1fr; }
     }
     .pair-controls {
       display: grid;
@@ -139,9 +142,10 @@
       <h2>Gateway 設定</h2>
       <div class="settings-row">
         <input id="atem-ip" type="text" placeholder="ATEM IP，例如 192.168.1.240">
+        <button class="secondary" id="discover-atem-btn" onclick="discoverAtem()">自動搜尋 ATEM</button>
         <button class="primary" onclick="saveSettings()">儲存 ATEM IP</button>
       </div>
-      <p class="empty" id="settings-hint">ATEM IP 由此頁設定，儲存後 Gateway 會自動重新連線。</p>
+      <p class="empty" id="settings-hint">可先自動搜尋 ATEM；搜尋不到時再手動輸入 IP，儲存後 Gateway 會自動重新連線。</p>
     </section>
 
     <section>
@@ -212,6 +216,28 @@
       settingsHint.textContent = "已儲存 ATEM IP，Gateway 正在重新連線...";
       await loadCameras();
       await refresh();
+    }
+
+    async function discoverAtem() {
+      const button = document.getElementById("discover-atem-btn");
+      button.disabled = true;
+      settingsHint.textContent = "正在同網段搜尋 ATEM，請稍候...";
+      try {
+        const result = await fetchJson("/api/discover_atem", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
+        atemIpInput.value = result.atem_ip || "";
+        settingsHint.textContent = `已找到 ATEM：${result.atem_ip}，Gateway 正在重新連線...`;
+        await loadCameras();
+        await refresh();
+      } catch (err) {
+        console.error(err);
+        settingsHint.textContent = "自動搜尋不到 ATEM，請確認同網段或手動輸入 IP。";
+      } finally {
+        button.disabled = false;
+      }
     }
 
     function renderUnpaired(devices) {

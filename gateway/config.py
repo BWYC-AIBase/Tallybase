@@ -5,6 +5,8 @@ import os
 ATEM_DEFAULT_IP = os.environ.get("ATEM_DEFAULT_IP", "")
 ATEM_PORT = 9910
 MIX_EFFECT = 0
+ATEM_SCAN_PREFIX = os.environ.get("ATEM_SCAN_PREFIX", "")
+ATEM_SCAN_TIMEOUT_S = float(os.environ.get("ATEM_SCAN_TIMEOUT_S", "0.25"))
 
 # REYAX RYLR998 UART LoRa module
 # Wiring: RYLR998 TXD -> Pi RXD, RYLR998 RXD -> Pi TXD, plus 3.3V/GND.

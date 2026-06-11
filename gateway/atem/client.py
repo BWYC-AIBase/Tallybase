@@ -3,14 +3,56 @@
 from __future__ import annotations
 
 import logging
+import socket
 import threading
 import time
 from typing import Callable, Optional
 
 import config
-from protocol.constants import MAX_CHANNELS, TALLY_OFF
+from protocol.constants import MAX_CHANNELS, TALLY_OFF, TALLY_PGM, TALLY_PVW
 
 logger = logging.getLogger(__name__)
+
+
+def _local_ipv4_prefix() -> str:
+    """Return the local /24 prefix used for outbound traffic."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("8.8.8.8", 80))
+            local_ip = sock.getsockname()[0]
+    except OSError:
+        local_ip = socket.gethostbyname(socket.gethostname())
+    parts = local_ip.split(".")
+    if len(parts) != 4 or parts[0] == "127":
+        raise RuntimeError(f"Cannot determine local IPv4 subnet from {local_ip}")
+    return ".".join(parts[:3])
+
+
+def discover_atem_ip(prefix: str = "", timeout_s: float = config.ATEM_SCAN_TIMEOUT_S) -> Optional[str]:
+    """Scan a /24 subnet for the first ATEM that completes a PyATEMMax handshake."""
+    from PyATEMMax import ATEMMax
+
+    scan_prefix = (prefix or config.ATEM_SCAN_PREFIX or _local_ipv4_prefix()).strip().rstrip(".")
+    logger.info("Scanning %s.1-254 for ATEM switchers", scan_prefix)
+
+    for host in range(1, 255):
+        ip = f"{scan_prefix}.{host}"
+        switcher = ATEMMax()
+        try:
+            switcher.connect(ip)
+            if switcher.waitForConnection(timeout=timeout_s):
+                model = getattr(switcher, "atemModel", "ATEM")
+                logger.info("Found %s at %s", model, ip)
+                return ip
+        except Exception:
+            pass
+        finally:
+            try:
+                switcher.disconnect()
+            except Exception:
+                pass
+    logger.info("No ATEM found on %s.0/24", scan_prefix)
+    return None
 
 
 class ATEMClient:
@@ -30,7 +72,10 @@ class ATEMClient:
 
     def connect(self) -> None:
         if not self.ip:
-            return
+            discovered_ip = discover_atem_ip()
+            if not discovered_ip:
+                raise TimeoutError("No ATEM found by auto scan")
+            self.ip = discovered_ip
         from PyATEMMax import ATEMMax
 
         self.switcher = ATEMMax()

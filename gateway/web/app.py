@@ -7,6 +7,7 @@ from datetime import datetime
 from flask import Flask, jsonify, render_template, request
 
 import config
+from atem.client import discover_atem_ip
 from persistence import load_gateway_settings, save_gateway_settings, save_paired_devices
 from protocol.packets import encode_pair_name, normalize_mac
 from state import GatewayState
@@ -49,6 +50,19 @@ def create_app(
         save_gateway_settings(settings)
         atem_client.set_ip(atem_ip)
         return jsonify({"status": "ok", "atem_ip": atem_ip})
+
+    @app.route("/api/discover_atem", methods=["POST"])
+    def discover_atem():
+        data = request.get_json(silent=True) or {}
+        prefix = str(data.get("prefix", "")).strip()
+        found_ip = discover_atem_ip(prefix=prefix)
+        if not found_ip:
+            return jsonify({"error": "No ATEM found"}), 404
+        settings = load_gateway_settings()
+        settings["atem_ip"] = found_ip
+        save_gateway_settings(settings)
+        atem_client.set_ip(found_ip)
+        return jsonify({"status": "ok", "atem_ip": found_ip})
 
     @app.route("/api/unpaired_devices")
     def get_unpaired():
