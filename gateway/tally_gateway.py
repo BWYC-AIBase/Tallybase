@@ -105,7 +105,7 @@ class TallyGateway:
             return
         if packet_type == PKT_MAC_BROADCAST:
             mac = normalize_mac(payload["mac"])
-            self.state.add_unpaired(mac)
+            self.state.mark_device_seen(mac)
 
     def _prune_offline_devices(self) -> None:
         removed = self.state.prune_stale_unpaired(config.SIGNAL_TIMEOUT_S)

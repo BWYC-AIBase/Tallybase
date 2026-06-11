@@ -56,7 +56,7 @@ def create_app(
 
     @app.route("/api/paired_devices")
     def get_paired():
-        return jsonify(state.get_paired())
+        return jsonify(state.get_online_paired(config.SIGNAL_TIMEOUT_S))
 
     @app.route("/api/pair_device", methods=["POST"])
     def pair_device():
@@ -77,11 +77,12 @@ def create_app(
 
     @app.route("/api/status")
     def status():
+        online_paired = state.get_online_paired(config.SIGNAL_TIMEOUT_S)
         return jsonify(
             {
                 "atem_connected": atem_client.connected,
                 "atem_ip": getattr(atem_client, "ip", ""),
-                "paired_count": len(state.get_paired()),
+                "paired_count": len(online_paired),
                 "unpaired_count": len(state.get_unpaired()),
             }
         )

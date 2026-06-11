@@ -13,17 +13,20 @@ class GatewayState:
         self.unpaired_devices: set[str] = set()
         self.unpaired_last_seen: dict[str, float] = {}
         self.paired_devices: dict[str, dict[str, Any]] = {}
+        self.paired_last_seen: dict[str, float] = {}
         self.atem_connected = False
         self.last_broadcast_seq = 0
         self.on_tally_change: Optional[Callable[[], None]] = None
         self.on_label_change: Optional[Callable[[int, str, str], None]] = None
 
-    def add_unpaired(self, mac: str) -> None:
+    def mark_device_seen(self, mac: str) -> None:
         now = time.monotonic()
         with self._lock:
-            if mac not in self.paired_devices:
-                self.unpaired_devices.add(mac)
-                self.unpaired_last_seen[mac] = now
+            if mac in self.paired_devices:
+                self.paired_last_seen[mac] = now
+                return
+            self.unpaired_devices.add(mac)
+            self.unpaired_last_seen[mac] = now
 
     def remove_unpaired(self, mac: str) -> None:
         with self._lock:
@@ -50,6 +53,15 @@ class GatewayState:
         with self._lock:
             return dict(self.paired_devices)
 
+    def get_online_paired(self, timeout_s: float) -> dict[str, dict[str, Any]]:
+        now = time.monotonic()
+        with self._lock:
+            return {
+                mac: dict(info)
+                for mac, info in self.paired_devices.items()
+                if now - self.paired_last_seen.get(mac, 0.0) <= timeout_s
+            }
+
     def set_paired_devices(self, devices: dict[str, dict[str, Any]]) -> None:
         with self._lock:
             self.paired_devices = devices
@@ -64,6 +76,7 @@ class GatewayState:
             self.paired_devices[mac] = info
             self.unpaired_devices.discard(mac)
             self.unpaired_last_seen.pop(mac, None)
+            self.paired_last_seen[mac] = time.monotonic()
 
     def find_mac_by_tally_id(self, tally_id: int) -> Optional[str]:
         with self._lock:
