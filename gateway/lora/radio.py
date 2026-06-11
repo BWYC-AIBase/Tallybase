@@ -15,23 +15,14 @@ logger = logging.getLogger(__name__)
 # LoRa roles:
 # - Downlink (tally / pair): RYLR998 TX via AT+SEND → tally light SX1262 RX
 # - Uplink (MAC broadcast): tally light SX1262 TX → RYLR998 RX (+RCV)
-# Uplink from lights uses a 5-byte SX1262 shim header before ASCII-hex payload.
-_SX1262_UPLINK_HEADER_LEN = 5
-
-
-def _unwrap_sx1262_frame(data: bytes) -> bytes:
-    """Decode uplink frames from tally-light SX1262 (not RYLR998 downlink format)."""
-    if len(data) >= 2 and data[0] == 0xAB:
-        return data
-    if len(data) >= 5:
-        declared_len = data[4]
-        hex_part = data[5 : 5 + declared_len]
-        if declared_len > 0 and len(hex_part) == declared_len:
-            try:
-                return bytes.fromhex(hex_part.decode("ascii"))
-            except (UnicodeDecodeError, ValueError):
-                pass
-    return data
+#
+# Uplink format (SX1262 → RYLR998):
+#   [5-byte RYLR address header][ASCII hex of protocol packet]
+#   RYLR998 strips the 5-byte header and reports +RCV with the ASCII hex payload.
+#   The gateway hex-decodes that ASCII hex string to get the binary protocol packet.
+#
+# So +RCV=<addr>,<len>,<hex_str>,<rssi>,<snr>
+#   bytes.fromhex(hex_str) → binary protocol packet starting with 0xAB
 
 
 class Rylr998Radio:
@@ -186,9 +177,12 @@ class Rylr998Radio:
             logger.warning("RYLR998 receive length mismatch from %s: %s", sender, line)
             return b""
         try:
-            packet = _unwrap_sx1262_frame(bytes.fromhex(payload))
+            packet = bytes.fromhex(payload)
         except ValueError:
             logger.warning("RYLR998 payload is not hex: %s", payload)
+            return b""
+        if not packet or packet[0] != 0xAB:
+            logger.warning("RYLR998 uplink bad magic from %s: %s", sender, payload)
             return b""
         logger.debug("RX %s from addr=%s rssi=%s snr=%s", packet.hex(), sender, rssi, snr)
         return packet
