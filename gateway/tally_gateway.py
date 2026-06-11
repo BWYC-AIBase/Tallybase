@@ -107,6 +107,11 @@ class TallyGateway:
             mac = normalize_mac(payload["mac"])
             self.state.add_unpaired(mac)
 
+    def _prune_offline_devices(self) -> None:
+        removed = self.state.prune_stale_unpaired(config.SIGNAL_TIMEOUT_S)
+        if removed:
+            logger.info("Removed offline unpaired devices: %s", ", ".join(removed))
+
     def _broadcast_tally(self) -> None:
         if not self.atem.connected:
             return
@@ -118,6 +123,7 @@ class TallyGateway:
 
     def _main_loop(self) -> None:
         next_broadcast = time.monotonic()
+        next_prune = time.monotonic()
         while not self._stop.is_set():
             if self.atem.connected and not self._atem_was_connected:
                 self._atem_was_connected = True
@@ -130,6 +136,9 @@ class TallyGateway:
                 self._broadcast_now.clear()
                 self._broadcast_tally()
                 next_broadcast = now + config.TALLY_BROADCAST_INTERVAL_S
+            if now >= next_prune:
+                self._prune_offline_devices()
+                next_prune = now + 1.0
             time.sleep(0.01)
 
 

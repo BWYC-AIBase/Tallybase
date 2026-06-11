@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from typing import Any, Callable, Optional
 
 
@@ -10,6 +11,7 @@ class GatewayState:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self.unpaired_devices: set[str] = set()
+        self.unpaired_last_seen: dict[str, float] = {}
         self.paired_devices: dict[str, dict[str, Any]] = {}
         self.atem_connected = False
         self.last_broadcast_seq = 0
@@ -17,13 +19,28 @@ class GatewayState:
         self.on_label_change: Optional[Callable[[int, str, str], None]] = None
 
     def add_unpaired(self, mac: str) -> None:
+        now = time.monotonic()
         with self._lock:
             if mac not in self.paired_devices:
                 self.unpaired_devices.add(mac)
+                self.unpaired_last_seen[mac] = now
 
     def remove_unpaired(self, mac: str) -> None:
         with self._lock:
             self.unpaired_devices.discard(mac)
+            self.unpaired_last_seen.pop(mac, None)
+
+    def prune_stale_unpaired(self, timeout_s: float) -> list[str]:
+        now = time.monotonic()
+        removed: list[str] = []
+        with self._lock:
+            for mac in list(self.unpaired_devices):
+                last_seen = self.unpaired_last_seen.get(mac, 0.0)
+                if now - last_seen > timeout_s:
+                    self.unpaired_devices.discard(mac)
+                    self.unpaired_last_seen.pop(mac, None)
+                    removed.append(mac)
+        return removed
 
     def get_unpaired(self) -> list[str]:
         with self._lock:
@@ -46,6 +63,7 @@ class GatewayState:
                     del self.paired_devices[existing_mac]
             self.paired_devices[mac] = info
             self.unpaired_devices.discard(mac)
+            self.unpaired_last_seen.pop(mac, None)
 
     def find_mac_by_tally_id(self, tally_id: int) -> Optional[str]:
         with self._lock:
