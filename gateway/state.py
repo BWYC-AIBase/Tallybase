@@ -82,6 +82,17 @@ class GatewayState:
             self.unpaired_last_seen.pop(mac, None)
             self.paired_last_seen[mac] = time.monotonic()
 
+    def unpair_device(self, mac: str) -> bool:
+        """Remove from paired and immediately move to unpaired (stays visible in UI)."""
+        with self._lock:
+            if mac not in self.paired_devices:
+                return False
+            del self.paired_devices[mac]
+            last_seen = self.paired_last_seen.pop(mac, None)
+            self.unpaired_devices.add(mac)
+            self.unpaired_last_seen[mac] = last_seen if last_seen is not None else time.monotonic()
+            return True
+
     def find_mac_by_tally_id(self, tally_id: int) -> Optional[str]:
         with self._lock:
             for mac, info in self.paired_devices.items():

@@ -81,10 +81,8 @@ def create_app(
             mac = normalize_mac(data["mac"])
         except Exception:
             return jsonify({"error": "Invalid MAC"}), 400
-        with state._lock:
-            if mac in state.paired_devices:
-                del state.paired_devices[mac]
-                state.paired_last_seen.pop(mac, None)
+        if not state.unpair_device(mac):
+            return jsonify({"error": "Device not found in paired list"}), 404
         save_paired_devices(state.get_paired())
         return jsonify({"status": "ok"})
 
