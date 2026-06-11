@@ -9,6 +9,7 @@ from flask import Flask, jsonify, render_template, request
 import config
 from atem.client import discover_atem_ip
 from persistence import load_gateway_settings, save_gateway_settings, save_paired_devices
+from protocol.constants import MAX_CHANNELS
 from protocol.packets import encode_pair_name, normalize_mac
 from state import GatewayState
 
@@ -77,6 +78,8 @@ def create_app(
         data = request.get_json(silent=True) or {}
         mac = normalize_mac(data["mac"])
         cam_id = int(data["cam_id"])
+        if cam_id < 1 or cam_id > MAX_CHANNELS:
+            return jsonify({"error": f"Camera ID must be between 1 and {MAX_CHANNELS}"}), 400
         cam_label = data.get("cam_label") or atem_client.get_label(cam_id)
         info = {
             "tally_id": cam_id,

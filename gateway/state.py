@@ -64,7 +64,11 @@ class GatewayState:
 
     def set_paired_devices(self, devices: dict[str, dict[str, Any]]) -> None:
         with self._lock:
-            self.paired_devices = devices
+            self.paired_devices = {
+                mac: info
+                for mac, info in devices.items()
+                if isinstance(info.get("tally_id"), int) and 1 <= info["tally_id"] <= 32
+            }
             self.unpaired_devices -= set(devices.keys())
 
     def pair_device(self, mac: str, info: dict[str, Any]) -> None:

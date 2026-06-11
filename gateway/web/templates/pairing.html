@@ -184,10 +184,16 @@
     }
 
     async function loadCameras() {
-      cameras = await fetchJson("/api/cameras");
+      try {
+        cameras = await fetchJson("/api/cameras");
+      } catch (err) {
+        console.error(err);
+        cameras = [];
+      }
       cameraSelect.innerHTML = "";
       if (!cameras.length) {
         cameraHint.textContent = "無法讀取 ATEM 攝影機（請確認 Gateway 已連線 ATEM）";
+        cameraHint.style.display = "block";
         cameraSelect.style.display = "none";
         return;
       }

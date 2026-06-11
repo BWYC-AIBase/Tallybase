@@ -18,7 +18,7 @@ import config
 from atem.client import ATEMService, create_atem_client
 from lora.radio import create_lora_radio
 from persistence import load_gateway_settings, load_paired_devices, save_paired_devices
-from protocol.constants import PKT_MAC_BROADCAST
+from protocol.constants import MAX_CHANNELS, PKT_MAC_BROADCAST
 from protocol.packets import decode_mac_broadcast, encode_pair_name, encode_tally_status, normalize_mac, parse_packet
 from state import GatewayState
 from web.app import create_app, run_web_server
@@ -45,7 +45,11 @@ class TallyGateway:
     def start(self) -> None:
         paired = load_paired_devices()
         self.state.set_paired_devices(paired)
-        logger.info("Loaded %d paired devices", len(paired))
+        valid_paired = self.state.get_paired()
+        if len(valid_paired) != len(paired):
+            logger.warning("Removed %d invalid paired device records", len(paired) - len(valid_paired))
+            save_paired_devices(valid_paired)
+        logger.info("Loaded %d paired devices", len(valid_paired))
 
         self.atem.on_tally_change = self._request_broadcast
         self.atem.on_label_change = self._on_label_change
@@ -92,6 +96,9 @@ class TallyGateway:
             return
         for mac, info in self.state.get_paired().items():
             tally_id = info["tally_id"]
+            if not isinstance(tally_id, int) or tally_id < 1 or tally_id > MAX_CHANNELS:
+                logger.warning("Skipping invalid paired device %s with tally_id=%r", mac, tally_id)
+                continue
             label = self.atem.get_label(tally_id)
             info["label"] = label
             self.state.pair_device(mac, info)

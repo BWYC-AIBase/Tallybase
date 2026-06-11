@@ -107,7 +107,9 @@ class ATEMClient:
         self.switcher = None
 
     def _video_source(self, channel: int):
-        return getattr(self.switcher.atem.videoSources, f"input{channel}")
+        if channel < 1 or channel > MAX_CHANNELS:
+            raise ValueError(f"ATEM channel must be between 1 and {MAX_CHANNELS}: {channel}")
+        return getattr(self.switcher.atem.videoSources, f"input{channel}", None)
 
     def get_tally_states(self) -> list[int]:
         if not self._connected or self.switcher is None:
@@ -115,7 +117,13 @@ class ATEMClient:
         states: list[int] = []
         for channel in range(1, MAX_CHANNELS + 1):
             source = self._video_source(channel)
-            flags = self.switcher.tally.bySource.flags[source]
+            if source is None:
+                states.append(TALLY_OFF)
+                continue
+            flags = self.switcher.tally.bySource.flags.get(source)
+            if flags is None:
+                states.append(TALLY_OFF)
+                continue
             if flags.program:
                 states.append(TALLY_PGM)
             elif flags.preview:
@@ -125,9 +133,16 @@ class ATEMClient:
         return states
 
     def get_label(self, channel: int) -> str:
+        if channel < 1 or channel > MAX_CHANNELS:
+            return f"CAM{channel}"
         if not self._connected or self.switcher is None:
             return f"CAM{channel}"
-        props = self.switcher.inputProperties[self._video_source(channel)]
+        source = self._video_source(channel)
+        if source is None:
+            return f"CAM{channel}"
+        props = self.switcher.inputProperties.get(source)
+        if props is None:
+            return f"CAM{channel}"
         label = props.longName
         return label if label else f"CAM{channel}"
 
