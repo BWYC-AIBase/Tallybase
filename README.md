@@ -2,86 +2,79 @@
 
 Raspberry Pi Gateway for ATEM LoRa Tally。
 
-這個 repo 只包含樹莓派端程式：ATEM 連線、REYAX RYLR998 LoRa Gateway、Flask Web UI、systemd 自動安裝腳本。Tally 燈韌體請放在另一個 `tallylight` repo，不需要複製到樹莓派。
+## 1. 系統內容概要
 
-## 內容
+TallyBase 是 ATEM LoRa Tally 系統的樹莓派端 Gateway，負責：
 
-- `gateway/`：Python Gateway 主程式
-- `gateway/web/`：配對與設定 Web UI
-- `gateway/scripts/setup_pi.sh`：Pi 安裝腳本
+- 連接 ATEM 切換台，讀取 Tally 狀態與攝影機名稱
+- 透過 REYAX RYLR998 LoRa 模組廣播狀態給 Tally 燈
+- 提供 Web UI 進行裝置配對與 Gateway 設定
 
-## 安裝到 Pi
+Tally 燈韌體位於另一個 `tallylight` repo，不需要部署到樹莓派。
 
-### 方式 A：從 GitHub clone 到 Pi
+| 目錄 / 檔案 | 說明 |
+|-------------|------|
+| `gateway/` | Python Gateway 主程式 |
+| `gateway/web/` | 配對與設定 Web UI |
+| `Dockerfile` | Docker image 建置 |
+| `docker-compose.yml` | 容器啟動設定 |
+| `data/` | 配對資料與設定持久化目錄 |
+| `.env.example` | Web UI port 設定範本 |
 
-```bash
-cd ~
-git clone <你的 tallybase repo URL> tallybase
-cd ~/tallybase/gateway/scripts
-chmod +x setup_pi.sh
-./setup_pi.sh
-```
+## 2. 接線對應（RYLR998）
 
-### 方式 B：從開發機用 scp 複製
+啟用樹莓派 UART：`raspi-config` → `Interface Options` → `Serial Port` → Login shell over serial：**No**、Serial hardware：**Yes**
 
-在這個 repo 根目錄執行：
+| RYLR998 腳位 | Raspberry Pi 4 實體腳位 | 說明 |
+|---|---|---|
+| VDD | Pin 1（3.3V） | 模組工作電壓 3.3V，勿接 5V |
+| GND | Pin 9（GND） | 與 TXD/RXD 同排，接線最短；Pin 6 若已被風扇佔用可改接任一 GND 腳（Pin 14 / 20 / 25 / 30 / 34 / 39） |
+| RXD | Pin 8（GPIO14 / TXD） | Pi 的 TX → 模組的 RX |
+| TXD | Pin 10（GPIO15 / RXD） | 模組的 TX → Pi 的 RX |
+| RST | 不需接線 | 內部已有 100kΩ 上拉，保持高電位 |
 
-```powershell
-scp -r .\* <pi-user>@<pi-ip>:/home/<pi-user>/tallybase/
-```
+Gateway 預設使用 `/dev/serial0`、115200 baud rate。
 
-範例：
+## 3. 安裝方式
 
-```powershell
-scp -r .\* tallybase@192.168.1.50:/home/tallybase/tallybase/
-```
-
-然後在 Pi 上執行：
-
-```bash
-cd ~/tallybase/gateway/scripts
-chmod +x setup_pi.sh
-./setup_pi.sh
-sudo systemctl enable tally-gateway
-sudo systemctl restart tally-gateway
-```
-
-`setup_pi.sh` 會自動建立 `.venv`，避免 Raspberry Pi OS Bookworm 的 `externally-managed-environment` pip 限制。
-
-## Web UI
-
-配對 UI：`http://<pi-ip>:5000`
-
-ATEM IP 在 Web UI 的「Gateway 設定」中設定。
-
-## RYLR998
-
-預設使用 `/dev/serial0`、`115200` baud rate。
-
-Pi 上請先啟用 UART：
+在樹莓派上進入 repo 目錄後執行：
 
 ```bash
-sudo raspi-config
+cd ~/tallybase
+sudo docker compose build
+sudo docker compose up -d
 ```
 
-選 `Interface Options` → `Serial Port`：
+若要修改 Web UI port，複製 `.env.example` 為 `.env` 後再啟動：
 
-- Login shell over serial：No
-- Serial hardware：Yes
+```bash
+cp .env.example .env
+```
 
-接線：
+```env
+FLASK_PORT=5000
+```
 
-| RYLR998 | Raspberry Pi |
-|---------|--------------|
-| VCC | 3.3V |
-| GND | GND |
-| TXD | RXD / GPIO15 / Pin 10 |
-| RXD | TXD / GPIO14 / Pin 8 |
+查看 log：
 
-## Runtime 檔案
+```bash
+sudo docker compose logs -f
+```
 
-以下檔案會在 Pi 上自動產生，不要提交到 GitHub：
+停止服務：
 
-- `gateway/paired_devices.json`
-- `gateway/gateway_settings.json`
-- `gateway/__pycache__/`
+```bash
+sudo docker compose down
+```
+
+## 4. Web UI 開啟方式
+
+瀏覽器開啟：
+
+```
+http://<pi-ip>:5000
+```
+
+若已修改 `.env` 中的 `FLASK_PORT`，請改用對應 port。
+
+在 Web UI 的「Gateway 設定」中設定 ATEM IP，並完成 Tally 燈配對。

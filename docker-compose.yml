@@ -1,0 +1,17 @@
+services:
+  tally-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: tallybase-gateway:latest
+    container_name: tally-gateway
+    restart: unless-stopped
+    network_mode: host
+    devices:
+      - "/dev/serial0:/dev/serial0"
+    environment:
+      TALLY_DATA_DIR: /data
+      FLASK_HOST: 0.0.0.0
+      FLASK_PORT: "${FLASK_PORT:-5000}"
+    volumes:
+      - ./data:/data

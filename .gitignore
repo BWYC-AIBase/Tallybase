@@ -1,0 +1,9 @@
+data/*
+!data/.gitkeep
+
+.env
+gateway/paired_devices.json
+gateway/gateway_settings.json
+gateway/__pycache__/
+gateway/**/__pycache__/
+*.pyc

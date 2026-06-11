@@ -1,0 +1,12 @@
+.git
+.gitignore
+.env
+.dockerignore
+Dockerfile
+docker-compose.yml
+data/*
+gateway/__pycache__/
+gateway/**/__pycache__/
+gateway/*.pyc
+gateway/paired_devices.json
+gateway/gateway_settings.json

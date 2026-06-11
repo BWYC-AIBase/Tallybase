@@ -12,6 +12,10 @@ import config
 logger = logging.getLogger(__name__)
 
 
+def _ensure_parent_dir(path: str) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+
+
 def load_paired_devices() -> dict[str, dict[str, Any]]:
     path = config.PAIRED_DEVICES_FILE
     if not os.path.exists(path):
@@ -28,6 +32,7 @@ def load_paired_devices() -> dict[str, dict[str, Any]]:
 
 def save_paired_devices(devices: dict[str, dict[str, Any]]) -> None:
     path = config.PAIRED_DEVICES_FILE
+    _ensure_parent_dir(path)
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(devices, handle, indent=2, ensure_ascii=False)
 
@@ -48,5 +53,6 @@ def load_gateway_settings() -> dict[str, Any]:
 
 def save_gateway_settings(settings: dict[str, Any]) -> None:
     path = config.GATEWAY_SETTINGS_FILE
+    _ensure_parent_dir(path)
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(settings, handle, indent=2, ensure_ascii=False)

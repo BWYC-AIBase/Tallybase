@@ -1,5 +1,5 @@
 #!/bin/bash
-# Raspberry Pi setup script for ATEM LoRa Tally Gateway
+# Raspberry Pi Docker setup script for ATEM LoRa Tally Gateway
 set -euo pipefail
 
 echo "=== ATEM LoRa Tally Gateway Setup ==="
@@ -11,45 +11,55 @@ echo "  serial hardware: Yes"
 
 TALLY_USER="${SUDO_USER:-$USER}"
 INSTALL_DIR="${TALLY_HOME:-/home/${TALLY_USER}/tallybase}"
-VENV_DIR="${INSTALL_DIR}/.venv"
 
-echo "Install gateway files to ${INSTALL_DIR}"
-mkdir -p "${INSTALL_DIR}"
-
-if ! python3 -m venv --help >/dev/null 2>&1; then
-  echo "Installing python3-venv..."
+if ! command -v curl >/dev/null 2>&1; then
+  echo "Installing curl..."
   sudo apt-get update
-  sudo apt-get install -y python3-venv
+  sudo apt-get install -y curl
 fi
 
-python3 -m venv "${VENV_DIR}"
-"${VENV_DIR}/bin/python" -m pip install --upgrade pip
-"${VENV_DIR}/bin/python" -m pip install -r "$(dirname "$0")/../requirements.txt"
+if ! command -v docker >/dev/null 2>&1; then
+  echo "Docker not found. Installing Docker..."
+  curl -fsSL https://get.docker.com | sudo sh
+fi
 
-echo "Copy tallybase/ contents to ${INSTALL_DIR} manually or via git pull."
-echo "Set ATEM IP from the Web UI after the service starts."
+if ! sudo docker compose version >/dev/null 2>&1; then
+  echo "Docker Compose plugin is required but was not found."
+  echo "Install it with your OS package manager, then rerun this script."
+  exit 1
+fi
 
-sudo tee /etc/systemd/system/tally-gateway.service >/dev/null <<EOF
-[Unit]
-Description=ATEM Tally LoRa Gateway
-After=network.target
+if ! groups "${TALLY_USER}" | grep -q '\bdocker\b'; then
+  echo "Adding ${TALLY_USER} to docker group."
+  sudo usermod -aG docker "${TALLY_USER}" || true
+  echo "Log out and log back in to use docker without sudo."
+fi
 
-[Service]
-Type=simple
-User=${TALLY_USER}
-WorkingDirectory=${INSTALL_DIR}/gateway
-Environment=PYTHONUNBUFFERED=1
-ExecStart=${VENV_DIR}/bin/python ${INSTALL_DIR}/gateway/tally_gateway.py
-Restart=always
-RestartSec=5
+if [ ! -f "${INSTALL_DIR}/docker-compose.yml" ]; then
+  echo "Cannot find ${INSTALL_DIR}/docker-compose.yml"
+  echo "Clone or copy this repo to ${INSTALL_DIR}, or set TALLY_HOME before running this script."
+  exit 1
+fi
 
-[Install]
-WantedBy=multi-user.target
-EOF
+cd "${INSTALL_DIR}"
+mkdir -p data
 
-sudo systemctl daemon-reload
-echo "Installed systemd service. Enable with:"
-echo "  sudo systemctl enable tally-gateway"
-echo "  sudo systemctl start tally-gateway"
+if [ ! -f ".env" ] && [ -f ".env.example" ]; then
+  cp .env.example .env
+fi
+
+WEB_PORT="${FLASK_PORT:-5000}"
+if [ -f ".env" ]; then
+  WEB_PORT="$(grep -E '^FLASK_PORT=' .env | tail -n 1 | cut -d '=' -f 2- || true)"
+  WEB_PORT="${WEB_PORT:-5000}"
+fi
+
+sudo docker compose build
+sudo docker compose up -d
+
+echo "Gateway container started."
+echo "Web UI: http://<pi-ip>:${WEB_PORT}"
+echo "View logs with:"
+echo "  cd ${INSTALL_DIR} && sudo docker compose logs -f"
 
 echo "Setup complete."

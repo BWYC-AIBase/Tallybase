@@ -26,11 +26,12 @@ MAC_BROADCAST_INTERVAL_S = 2.0
 SIGNAL_TIMEOUT_S = 10.0
 
 # Web server
-FLASK_HOST = "0.0.0.0"
-FLASK_PORT = 5000
+FLASK_HOST = os.environ.get("FLASK_HOST", "0.0.0.0")
+FLASK_PORT = int(os.environ.get("FLASK_PORT", "5000"))
 
 # Paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PAIRED_DEVICES_FILE = os.path.join(BASE_DIR, "paired_devices.json")
-GATEWAY_SETTINGS_FILE = os.path.join(BASE_DIR, "gateway_settings.json")
+DATA_DIR = os.environ.get("TALLY_DATA_DIR", BASE_DIR)
+PAIRED_DEVICES_FILE = os.path.join(DATA_DIR, "paired_devices.json")
+GATEWAY_SETTINGS_FILE = os.path.join(DATA_DIR, "gateway_settings.json")
 
