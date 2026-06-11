@@ -12,13 +12,15 @@ import config
 
 logger = logging.getLogger(__name__)
 
-# Heltec SX1262 receivers expect the same over-air frame used by tallylight:
-# [0..1] reserved, [2..3] destination LE, [4] ASCII-hex payload length, [5..] hex data.
-_SX1262_FRAME_HEADER_LEN = 5
+# LoRa roles:
+# - Downlink (tally / pair): RYLR998 TX via AT+SEND → tally light SX1262 RX
+# - Uplink (MAC broadcast): tally light SX1262 TX → RYLR998 RX (+RCV)
+# Uplink from lights uses a 5-byte SX1262 shim header before ASCII-hex payload.
+_SX1262_UPLINK_HEADER_LEN = 5
 
 
 def _unwrap_sx1262_frame(data: bytes) -> bytes:
-    """Decode SX1262/RYLR998 over-air frames from Heltec tally lights."""
+    """Decode uplink frames from tally-light SX1262 (not RYLR998 downlink format)."""
     if len(data) >= 2 and data[0] == 0xAB:
         return data
     if len(data) >= 5:
@@ -92,8 +94,9 @@ class Rylr998Radio:
         - length = ASCII character count of <data> (max 240)
         - <data> is literal ASCII (we send the packet as an uppercase hex string)
 
-        The module prepends its own 5-byte over-air header; tally lights decode
-        [hdr][ascii-hex] the same way as uplink from SX1262.
+        RYLR998 is the downlink transmitter: the module prepends an 8-byte
+        over-air header, then the ASCII-hex string. Tally lights decode that
+        on receive (see tallylight lora_handler.cpp).
         """
         if self._serial is None:
             raise RuntimeError("LoRa radio not initialized")
