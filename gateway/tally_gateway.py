@@ -50,14 +50,15 @@ class TallyGateway:
             logger.warning("Removed %d invalid paired device records", len(paired) - len(valid_paired))
             save_paired_devices(valid_paired)
         logger.info("Loaded %d paired devices", len(valid_paired))
-        if valid_paired:
-            self._push_pair_announcements()
 
         self.atem.on_tally_change = self._request_broadcast
         self.atem.on_label_change = self._on_label_change
         self.atem_service.start()
 
         self.lora.start(on_receive=self._on_lora_receive)
+
+        if valid_paired:
+            self._push_pair_announcements()
 
         app = create_app(self.state, self.atem, self.lora)
         web_thread = threading.Thread(
