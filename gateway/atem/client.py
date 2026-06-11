@@ -84,9 +84,14 @@ class ATEMClient:
         if not self.switcher.waitForConnection(timeout=10.0):
             raise TimeoutError(f"Could not connect to ATEM at {self.ip}")
         self._connected = True
-        self._last_states = self.get_tally_states()
-        self._last_labels = {i: self.get_label(i) for i in range(1, MAX_CHANNELS + 1)}
-        logger.info("Connected to ATEM")
+        try:
+            self._last_states = self.get_tally_states()
+            self._last_labels = {i: self.get_label(i) for i in range(1, MAX_CHANNELS + 1)}
+        except Exception as exc:
+            logger.warning("ATEM connected but initial state read failed: %s", exc)
+            self._last_states = [TALLY_OFF] * MAX_CHANNELS
+            self._last_labels = {}
+        logger.info("Connected to ATEM at %s", self.ip)
 
     def set_ip(self, ip: str) -> None:
         ip = ip.strip()
@@ -111,6 +116,18 @@ class ATEMClient:
             raise ValueError(f"ATEM channel must be between 1 and {MAX_CHANNELS}: {channel}")
         return getattr(self.switcher.atem.videoSources, f"input{channel}", None)
 
+    def _tally_flags_for_source(self, source):
+        try:
+            return self.switcher.tally.bySource.flags[source]
+        except (KeyError, TypeError, AttributeError):
+            return None
+
+    def _input_properties_for_source(self, source):
+        try:
+            return self.switcher.inputProperties[source]
+        except (KeyError, TypeError, AttributeError):
+            return None
+
     def get_tally_states(self) -> list[int]:
         if not self._connected or self.switcher is None:
             return [TALLY_OFF] * MAX_CHANNELS
@@ -120,7 +137,7 @@ class ATEMClient:
             if source is None:
                 states.append(TALLY_OFF)
                 continue
-            flags = self.switcher.tally.bySource.flags.get(source)
+            flags = self._tally_flags_for_source(source)
             if flags is None:
                 states.append(TALLY_OFF)
                 continue
@@ -140,7 +157,7 @@ class ATEMClient:
         source = self._video_source(channel)
         if source is None:
             return f"CAM{channel}"
-        props = self.switcher.inputProperties.get(source)
+        props = self._input_properties_for_source(source)
         if props is None:
             return f"CAM{channel}"
         label = props.longName
