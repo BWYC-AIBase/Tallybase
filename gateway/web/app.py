@@ -74,6 +74,20 @@ def create_app(
     def get_paired():
         return jsonify(state.get_online_paired(config.SIGNAL_TIMEOUT_S))
 
+    @app.route("/api/unpair_device", methods=["POST"])
+    def unpair_device():
+        data = request.get_json(silent=True) or {}
+        try:
+            mac = normalize_mac(data["mac"])
+        except Exception:
+            return jsonify({"error": "Invalid MAC"}), 400
+        with state._lock:
+            if mac in state.paired_devices:
+                del state.paired_devices[mac]
+                state.paired_last_seen.pop(mac, None)
+        save_paired_devices(state.get_paired())
+        return jsonify({"status": "ok"})
+
     @app.route("/api/pair_device", methods=["POST"])
     def pair_device():
         data = request.get_json(silent=True) or {}

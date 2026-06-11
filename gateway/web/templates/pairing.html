@@ -95,6 +95,8 @@
       cursor: pointer;
     }
     button.secondary { cursor: pointer; }
+    button.danger { background: #c0392b; color: #fff; border: none; padding: 0.4rem 0.9rem; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+    button.danger:hover { background: #a93226; }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
     .settings-row {
       display: grid;
@@ -285,21 +287,58 @@
               <th>MAC</th>
               <th>頻道</th>
               <th>Label</th>
-              <th>配對時間</th>
+              <th>操作</th>
             </tr>
           </thead>
           <tbody>
-            ${entries.map(([mac, info]) => `
+            ${entries.map(([mac, info]) => {
+              const safeMac = mac.replace(/:/g, "");
+              const camOptions = cameras.map((cam) =>
+                `<option value="${cam.id}" ${cam.id === info.tally_id ? "selected" : ""}>CAM${cam.id} - ${cam.label}</option>`
+              ).join("");
+              return `
               <tr>
                 <td class="mac">${mac}</td>
                 <td>CAM${info.tally_id}</td>
                 <td>${info.label || ""}</td>
-                <td>${info.paired_at || ""}</td>
-              </tr>
-            `).join("")}
+                <td>
+                  <div class="pair-controls">
+                    <select id="repaired-${safeMac}">${camOptions}</select>
+                    <button class="secondary" onclick="repairDevice('${mac}')">重新指定</button>
+                    <button class="danger" onclick="unpairDevice('${mac}')">解除配對</button>
+                  </div>
+                </td>
+              </tr>`;
+            }).join("")}
           </tbody>
         </table>
       `;
+    }
+
+    async function unpairDevice(mac) {
+      if (!confirm(`確定要解除 ${mac} 的配對嗎？`)) return;
+      await fetchJson("/api/unpair_device", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mac }),
+      });
+      await refresh();
+    }
+
+    async function repairDevice(mac) {
+      const select = document.getElementById(`repaired-${mac.replace(/:/g, "")}`);
+      const camId = Number(select.value);
+      const cam = cameras.find((item) => item.id === camId);
+      await fetchJson("/api/pair_device", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mac,
+          cam_id: camId,
+          cam_label: cam ? cam.label : `CAM${camId}`,
+        }),
+      });
+      await refresh();
     }
 
     async function pairDevice(mac) {
