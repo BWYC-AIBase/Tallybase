@@ -12,6 +12,25 @@ import config
 
 logger = logging.getLogger(__name__)
 
+# Heltec SX1262 receivers expect the same over-air frame used by tallylight:
+# [0..1] reserved, [2..3] destination LE, [4] ASCII-hex payload length, [5..] hex data.
+_SX1262_FRAME_HEADER_LEN = 5
+
+
+def _unwrap_sx1262_frame(data: bytes) -> bytes:
+    """Decode SX1262/RYLR998 over-air frames from Heltec tally lights."""
+    if len(data) >= 2 and data[0] == 0xAB:
+        return data
+    if len(data) >= 5:
+        declared_len = data[4]
+        hex_part = data[5 : 5 + declared_len]
+        if declared_len > 0 and len(hex_part) == declared_len:
+            try:
+                return bytes.fromhex(hex_part.decode("ascii"))
+            except (UnicodeDecodeError, ValueError):
+                pass
+    return data
+
 
 class Rylr998Radio:
     def __init__(self) -> None:
@@ -66,6 +85,16 @@ class Rylr998Radio:
             self._serial.close()
 
     def transmit(self, packet: bytes) -> None:
+        """Send protocol packet via AT+SEND per RYLR998 manual.
+
+        AT+SEND=<address>,<length>,<data>
+        - address 0 = broadcast
+        - length = ASCII character count of <data> (max 240)
+        - <data> is literal ASCII (we send the packet as an uppercase hex string)
+
+        The module prepends its own 5-byte over-air header; tally lights decode
+        [hdr][ascii-hex] the same way as uplink from SX1262.
+        """
         if self._serial is None:
             raise RuntimeError("LoRa radio not initialized")
         payload = packet.hex().upper()
@@ -74,7 +103,7 @@ class Rylr998Radio:
         command = f"AT+SEND={config.RYLR_TARGET_ADDRESS},{len(payload)},{payload}"
         with self._tx_lock:
             self._send_command(command)
-        logger.debug("TX %s via RYLR998 hex payload %s", packet.hex(), payload)
+        logger.info("TX LoRa AT+SEND %s (%d ascii bytes)", payload, len(payload))
 
     def _rx_loop(self) -> None:
         while self._running:
@@ -144,6 +173,7 @@ class Rylr998Radio:
             logger.warning("Malformed RYLR998 receive line: %s", line)
             return b""
         sender, length_text, payload, rssi, snr = parts
+        payload = payload.strip()
         try:
             expected_len = int(length_text)
         except ValueError:
@@ -153,7 +183,7 @@ class Rylr998Radio:
             logger.warning("RYLR998 receive length mismatch from %s: %s", sender, line)
             return b""
         try:
-            packet = bytes.fromhex(payload)
+            packet = _unwrap_sx1262_frame(bytes.fromhex(payload))
         except ValueError:
             logger.warning("RYLR998 payload is not hex: %s", payload)
             return b""
